@@ -1,10 +1,9 @@
-function [estimate_phase, wrapped_phase] = create_estimate_phase(hologram, groundtruth)
-object_phase = groundtruth;
+function estimate_phase = create_estimate_phase(hologram, groundtruth, wrapped_phase, carrier)
+
 SENSITIVITY_COEF = 0.6;   % Hệ số nhạy adaptive threshold
-NEIGHBORHOOD_SIZE = 51;    % Kích thước vùng lân cận (phải là số lẻ)
+NEIGHBORHOOD_SIZE = 25;    % Kích thước vùng lân cận (phải là số lẻ)
 MIN_BRANCH_LENGTH = 8;    % Ngưỡng độ dài nhánh thừa cần xóa (thay cho distThresh cũ)
 GAUSS_SIGMA = 1;           % Độ làm mượt ảnh
-distThresh = 6;
 
 hologram = imgaussfilt(hologram, GAUSS_SIGMA);
 hologram = adapthisteq(hologram);
@@ -27,26 +26,6 @@ BW = bwskel(BW, 'MinBranchLength', MIN_BRANCH_LENGTH);
 %%
 BW = bwfill(BW,'holes');
 BW = bwskel(BW, 'MinBranchLength', MIN_BRANCH_LENGTH);
-
-%% ngawts ket noi H-brigde
-B = bwmorph(BW, 'branchpoints');
-R = 4;
-se_disk = strel('disk', R);
-
-B = imdilate(B, se_disk);
-E = bwmorph(BW, 'endpoints');
-BW = BW & ~B;
-min_len = 30; % Ngưỡng độ dài (pixel)
-BW = bwareaopen(BW, min_len);
-BW = BW | B;
-BW = bwmorph(BW, 'thin', Inf);
-
-%% --- Tìm endpoint ---
-
-BW = bwmorph(BW,"bridge",Inf);
-BW = bwmorph(BW,"diag", Inf);
-BW = bwmorph(BW,"skeleton", Inf);
-BW = bwmorph(BW,'spur',1);
 
 %% noois diem
 n = 8;
@@ -152,7 +131,7 @@ if any(branchpoints_check(:))
     return; % Hoặc break
 end
 %%
-wrapped_phase = wrapToPi(object_phase) ;
+wrapped_phase = wrapToPi(groundtruth) ;
 
 %% tái tạo pha estimate
 [~, labels, img] = assign_fringe_order(BW_connected, true);
@@ -182,6 +161,8 @@ phi_est = phi_est - plane_phase - (max(phi_est(:)- max(plane_phase(:))))/2;
 offset = 7;
 finalUnwrappedPhase = finalUnwrappedPhase(offset+1:end-offset, offset+1:end-offset);
 estimate_phase = finalUnwrappedPhase;
+
+
 end
 
 
@@ -1033,14 +1014,14 @@ end
 
 end
 function [unwrappedPhase, kMap] = unwrapUsingEstimate(estimatedPhase, wrappedPhase)
-% Giải Wrapped pha `wrappedPhase` dựa trên pha ước lượng `estimatedPhase`.
-% wrappedEstimate = wrapToPi(estimatedPhase);
-kMap = round((estimatedPhase - wrappedPhase) / (2*pi));
-unwrappedPhase = wrappedPhase + 2*pi * kMap;
-% ta có: estimated ~ unwraping_phase
-% mà un_phase = wwrapped + k.2pi
-% thay 2 vào 1, có: estiamted - wrapped ~ k.2pi
-% Suy ra: k ~ (estimated - wrapped)/2pi
+    % Giải Wrapped pha `wrappedPhase` dựa trên pha ước lượng `estimatedPhase`.
+    % wrappedEstimate = wrapToPi(estimatedPhase);
+    kMap = round((estimatedPhase - wrappedPhase) / (2*pi));
+    unwrappedPhase = wrappedPhase + 2*pi * kMap;
+    % ta có: estimated ~ unwraping_phase
+    % mà un_phase = wwrapped + k.2pi
+    % thay 2 vào 1, có: estiamted - wrapped ~ k.2pi
+    % Suy ra: k ~ (estimated - wrapped)/2pi
 end
 function varargout = crop_multiple_to_smallest(varargin)
 % Giả định tất cả các biến là 2D ma trận
@@ -1064,4 +1045,247 @@ for i = 1:n
 
     varargout{i} = mat(row_start:row_end, col_start:col_end);
 end
+end
+function [corrected_unwrapped_phase, num_iterations, convergence_history] = correct_sparse_artifacts_iterative(unwrapped_phase_input, varargin)
+% Hàm cải tiến: Xử lý các điểm nhiễu sparse với thuật toán lặp và ràng buộc biên
+% Dựa trên phương pháp lọc trung vị để xác định và hiệu chỉnh các điểm lỗi.
+% Lặp đến khi hội tụ (không còn thay đổi k hoặc thay đổi < epsilon)
+%
+% Inputs:
+%   unwrapped_phase_input - Ma trận pha unwrapped đầu vào
+%   varargin - Các tham số tùy chọn:
+%       'FilterSize' - Kích thước bộ lọc [default: [15 15]]
+%       'Epsilon' - Ngưỡng hội tụ [default: 1e-6]
+%       'MaxIterations' - Số lần lặp tối đa [default: 50]
+%       'Verbose' - Hiển thị thông tin debug [default: false]
+%       'BoundaryCondition' - Điều kiện biên ['zero'|'symmetric'|'replicate'|'circular'] [default: 'symmetric']
+%       'BoundaryWidth' - Độ rộng vùng biên không được hiệu chỉnh [default: 0]
+%       'PreserveBoundary' - Giữ nguyên giá trị biên [default: true]
+%       'MaxDeltaK' - Giới hạn tối đa cho |delta_k| [default: 10]
+%       'MaskInvalid' - Mask cho các pixel không hợp lệ [default: []]
+%
+% Outputs:
+%   corrected_unwrapped_phase - Pha đã được hiệu chỉnh
+%   num_iterations - Số lần lặp thực tế
+%   convergence_history - Lịch sử hội tụ (RMS của delta_k)
+
+    % Xử lý tham số đầu vào
+    p = inputParser;
+    addParameter(p, 'FilterSize', [5 5], @(x) isnumeric(x) && length(x) == 2);
+    addParameter(p, 'Epsilon', 1e-6, @(x) isnumeric(x) && x > 0);
+    addParameter(p, 'MaxIterations', 100, @(x) isnumeric(x) && x > 0);
+    addParameter(p, 'Verbose', false, @islogical);
+    addParameter(p, 'BoundaryCondition', 'symmetric', @(x) ischar(x) && ismember(x, {'zero', 'symmetric', 'replicate', 'circular'}));
+    addParameter(p, 'BoundaryWidth', 5, @(x) isnumeric(x) && x >= 0);
+    addParameter(p, 'PreserveBoundary', true, @islogical);
+    addParameter(p, 'MaxDeltaK', 2, @(x) isnumeric(x) && x > 0);
+    addParameter(p, 'MaskInvalid', [], @(x) isempty(x) || islogical(x));
+    parse(p, varargin{:});
+    
+    filter_size = p.Results.FilterSize;
+    epsilon = p.Results.Epsilon;
+    max_iterations = p.Results.MaxIterations;
+    verbose = p.Results.Verbose;
+    boundary_condition = p.Results.BoundaryCondition;
+    boundary_width = p.Results.BoundaryWidth;
+    preserve_boundary = p.Results.PreserveBoundary;
+    max_delta_k = p.Results.MaxDeltaK;
+    mask_invalid = p.Results.MaskInvalid;
+    
+    % Khởi tạo
+    [rows, cols] = size(unwrapped_phase_input);
+    current_phase = unwrapped_phase_input;
+    original_phase = unwrapped_phase_input; % Lưu pha gốc để tham chiếu biên
+    convergence_history = [];
+    num_iterations = 0;
+    previous_delta_k = [];
+    
+    % Tạo mask cho vùng biên nếu cần
+    if preserve_boundary && boundary_width > 0
+        boundary_mask = create_boundary_mask(rows, cols, boundary_width);
+    else
+        boundary_mask = false(rows, cols);
+    end
+
+% Hàm hỗ trợ: Tạo mask cho vùng biên
+function boundary_mask = create_boundary_mask(rows, cols, width)
+    boundary_mask = false(rows, cols);
+    if width > 0
+        boundary_mask(1:width, :) = true;           % Biên trên
+        boundary_mask(end-width+1:end, :) = true;   % Biên dưới
+        boundary_mask(:, 1:width) = true;           % Biên trái
+        boundary_mask(:, end-width+1:end) = true;   % Biên phải
+    end
+end
+
+% Hàm hỗ trợ: Áp dụng điều kiện biên
+function phase_with_boundary = apply_boundary_condition(phase, condition, filter_size)
+    [rows, cols] = size(phase);
+    pad_rows = floor(filter_size(1)/2);
+    pad_cols = floor(filter_size(2)/2);
+    
+    switch lower(condition)
+        case 'zero'
+            phase_with_boundary = padarray(phase, [pad_rows, pad_cols], 0, 'both');
+        case 'symmetric'
+            phase_with_boundary = padarray(phase, [pad_rows, pad_cols], 'symmetric', 'both');
+        case 'replicate'
+            phase_with_boundary = padarray(phase, [pad_rows, pad_cols], 'replicate', 'both');
+        case 'circular'
+            phase_with_boundary = padarray(phase, [pad_rows, pad_cols], 'circular', 'both');
+        otherwise
+            phase_with_boundary = padarray(phase, [pad_rows, pad_cols], 'symmetric', 'both');
+    end
+end
+
+% Hàm hỗ trợ: Ràng buộc tính liên tục không gian
+function delta_k_constrained = apply_spatial_continuity_constraint(delta_k, current_phase)
+    % Kiểm tra gradient địa phương để tránh các thay đổi đột ngột
+    [rows, cols] = size(delta_k);
+    delta_k_constrained = delta_k;
+    
+    % Tính gradient của pha hiện tại
+    [grad_x, grad_y] = gradient(current_phase);
+    grad_magnitude = sqrt(grad_x.^2 + grad_y.^2);
+    
+    % Định nghĩa ngưỡng gradient (vùng có gradient cao được phép thay đổi nhiều hơn)
+    grad_threshold = prctile(grad_magnitude(:), 75); % 75th percentile
+    
+    % Áp dụng ràng buộc dựa trên gradient
+    for i = 2:rows-1
+        for j = 2:cols-1
+            if abs(delta_k(i,j)) > 1 && grad_magnitude(i,j) < grad_threshold
+                % Nếu thay đổi lớn nhưng gradient thấp, hạn chế thay đổi
+                neighbors = delta_k(i-1:i+1, j-1:j+1);
+                median_neighbor = median(neighbors(:));
+                
+                % Chỉ cho phép thay đổi không quá 1 bước so với median của lân cận
+                if abs(delta_k(i,j) - median_neighbor) > 1
+                    delta_k_constrained(i,j) = median_neighbor + sign(delta_k(i,j) - median_neighbor);
+                end
+            end
+        end
+    end
+end
+    
+    % Xử lý mask invalid
+    if isempty(mask_invalid)
+        mask_invalid = false(rows, cols);
+    else
+        if ~isequal(size(mask_invalid), [rows, cols])
+            error('MaskInvalid phải có cùng kích thước với unwrapped_phase_input');
+        end
+    end
+    
+    % Mask tổng hợp (vùng không được hiệu chỉnh)
+    protection_mask = boundary_mask | mask_invalid;
+    
+    if verbose
+        fprintf('Bắt đầu quá trình hiệu chỉnh lặp với ràng buộc biên...\n');
+        fprintf('Image size: %dx%d\n', rows, cols);
+        fprintf('Filter size: [%d %d], Epsilon: %.2e, Max iterations: %d\n', ...
+                filter_size(1), filter_size(2), epsilon, max_iterations);
+        fprintf('Boundary condition: %s, Boundary width: %d\n', boundary_condition, boundary_width);
+        fprintf('Protected pixels: %d (%.2f%%)\n', sum(protection_mask(:)), 100*sum(protection_mask(:))/(rows*cols));
+    end
+    
+    % Vòng lặp chính
+    for iter = 1:max_iterations
+        % Bước 1: Xử lý điều kiện biên trước khi lọc
+        phase_with_boundary = apply_boundary_condition(current_phase, boundary_condition, filter_size);
+        
+        % Bước 2: Áp dụng bộ lọc trung vị với xử lý biên
+        filtered_phase = medfilt2(phase_with_boundary, filter_size, 'symmetric');
+        
+        % Cắt về kích thước ban đầu nếu cần
+        if ~isequal(size(filtered_phase), [rows, cols])
+            filtered_phase = filtered_phase(1:rows, 1:cols);
+        end
+        
+        % Bước 3: Tính toán sự khác biệt về "thứ tự vân" 
+        % delta_k = Round[(Phi_filtered - Phi_current) / 2π]
+        delta_k = round((filtered_phase - current_phase) / (2*pi));
+        
+        % Bước 4: Áp dụng các ràng buộc
+        % Giới hạn |delta_k|
+        delta_k = sign(delta_k) .* min(abs(delta_k), max_delta_k);
+        
+        % Bảo vệ vùng biên và các pixel không hợp lệ
+        delta_k(protection_mask) = 0;
+        
+        % Bước 5: Kiểm tra tính liên tục không gian (spatial continuity constraint)
+        delta_k = apply_spatial_continuity_constraint(delta_k, current_phase);
+        
+        % Tính toán metric hội tụ (RMS của delta_k chỉ trên vùng được phép thay đổi)
+        active_pixels = ~protection_mask;
+        if sum(active_pixels(:)) > 0
+            rms_delta_k = sqrt(mean((delta_k(active_pixels)).^2));
+        else
+            rms_delta_k = 0;
+        end
+        
+        convergence_history(end+1) = rms_delta_k;
+        num_iterations = iter;
+        
+        if verbose
+            num_corrections = sum(delta_k(:) ~= 0);
+            fprintf('Iteration %d: RMS(delta_k) = %.6f, Corrections: %d, Unique values: %d\n', ...
+                    iter, rms_delta_k, num_corrections, length(unique(delta_k(:))));
+        end
+        
+        % Kiểm tra điều kiện hội tụ
+        if iter > 1
+            % Kiểm tra xem delta_k có thay đổi không
+            if isequal(delta_k, previous_delta_k)
+                if verbose
+                    fprintf('Hội tụ đạt được: delta_k không thay đổi (iteration %d)\n', iter);
+                end
+                break;
+            end
+            
+            % Kiểm tra xem thay đổi có nhỏ hơn epsilon không
+            if rms_delta_k < epsilon
+                if verbose
+                    fprintf('Hội tụ đạt được: RMS(delta_k) < epsilon (iteration %d)\n', iter);
+                end
+                break;
+            end
+            
+            % Kiểm tra thay đổi tương đối giữa các lần lặp
+            relative_change = abs(convergence_history(end) - convergence_history(end-1)) / ...
+                             (convergence_history(end-1) + eps);
+            if relative_change < epsilon
+                if verbose
+                    fprintf('Hội tụ đạt được: Thay đổi tương đối < epsilon (iteration %d)\n', iter);
+                end
+                break;
+            end
+        end
+        
+        % Bước 3: Hiệu chỉnh pha với ràng buộc biên
+        % Phi_corrected = Phi_current + delta_k * 2π
+        current_phase = current_phase + delta_k * (2*pi);
+        
+        % Khôi phục giá trị biên gốc nếu cần
+        if preserve_boundary
+            current_phase(protection_mask) = original_phase(protection_mask);
+        end
+        
+        % Lưu delta_k hiện tại để so sánh ở lần lặp tiếp theo
+        previous_delta_k = delta_k;
+        
+        % Kiểm tra nếu đạt số lần lặp tối đa
+        if iter == max_iterations
+            if verbose
+                fprintf('Cảnh báo: Đạt số lần lặp tối đa (%d) mà chưa hội tụ hoàn toàn\n', max_iterations);
+            end
+        end
+    end
+    
+    corrected_unwrapped_phase = current_phase;
+    
+    if verbose
+        fprintf('Hoàn thành sau %d lần lặp\n', num_iterations);
+        fprintf('RMS cuối cùng của delta_k: %.6f\n', convergence_history(end));
+    end
 end

@@ -16,9 +16,9 @@ mask = rho <= 1;
 % pos_coeff = [1, 2, 3, 4, 5, 6, 7 ]; 
 % val_coeff = [];
 
-pos_coeff = 4:16;      % index các đa thức Zernike
-max_amp = 3;
-val_coeff = (rand(1, length(pos_coeff)) - 0.5) * 2 * max_amp;
+pos_coeff = 4:10;      % index các đa thức Zernike
+max_amp = 7;
+val_coeff = (rand(1, length(pos_coeff)) - 1) * 2 * max_amp;
 
 % Kiểm tra an toàn: Hai mảng phải có cùng độ dài
 if length(pos_coeff) ~= length(val_coeff)

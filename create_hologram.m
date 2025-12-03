@@ -1,4 +1,4 @@
-function hologram = create_hologram(surface, noise_level)
+function [hologram, wrapped_phase, carrier] = create_hologram(surface, noise_level)
 N = size(surface,1);
 M = size(surface,2);
 
@@ -8,12 +8,13 @@ object_phase_without_noise = surface;
 sigma_signal = std(object_phase_without_noise(:), 'omitnan');
 k = noise_level;
 % 3. Tạo nhiễu (Bỏ 'omitnan' trong randn)
-noise = (k * sigma_signal) * randn(size(object_phase_without_noise));
+noise = (k .* sigma_signal) .* randn(size(object_phase_without_noise));
 
 object_phase = object_phase_without_noise + noise;
 %% 3. TẠO HOLOGRAM
-fx = 20 / N; % Tần số sóng mang
+fx = 30 / N; % Tần số sóng mang
 fy = -30 / M;
+carry_f = [fx, fy];
 [X, Y] = meshgrid(1:N, 1:M);
 
 % Cường độ nền và điều biến
@@ -26,4 +27,7 @@ carrier = 2 * pi * (fx * X + fy * Y);
 % --- Tạo hologram (ảnh giao thoa) theo công thức mới ---
 hologram = a + b .* cos(carrier + object_phase);
 hologram = mat2gray(hologram);
+
+wrapped_phase = wrapToPi(object_phase);
+
 end
