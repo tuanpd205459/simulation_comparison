@@ -6,15 +6,15 @@ object_phase_without_noise = surface;
 
 % Thêm nhiễu vào pha đối tượng
 sigma_signal = std(object_phase_without_noise(:), 'omitnan');
-k = noise_level;
+
 % 3. Tạo nhiễu (Bỏ 'omitnan' trong randn)
-noise = (k .* sigma_signal) .* randn(size(object_phase_without_noise));
+noise = (noise_level .* sigma_signal) .* randn(size(object_phase_without_noise));
 
 object_phase = object_phase_without_noise + noise;
 %% 3. TẠO HOLOGRAM
 fx = 30 / N; % Tần số sóng mang
 fy = -30 / M;
-carry_f = [fx, fy];
+
 [X, Y] = meshgrid(1:N, 1:M);
 
 % Cường độ nền và điều biến

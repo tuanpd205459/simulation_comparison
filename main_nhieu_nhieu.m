@@ -40,7 +40,6 @@ for i = 1:num_trials
         figure; imshow(log(abs(fft_img) + 1), []); title('Pho bien do FFT');
     end
 
-    % --- 3.3 Chạy các thuật toán Unwrapping ---
     phi_goldstein = unwrap_goldstein(wrapped_phase);
     phi_tie_dct   = Unwrap_TIE_DCT_Iter(wrapped_phase);
     phi_quality   = unwrap_quality(wrapped_phase);

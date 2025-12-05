@@ -12,13 +12,26 @@ y = linspace(-1,1, gridsize);
 % TẠO MASK: Chỉ lấy giá trị trong hình tròn bán kính 1
 mask = rho <= 1;
 
-% Mảng 1: Vị trí (Index) các Zernike 
-% pos_coeff = [1, 2, 3, 4, 5, 6, 7 ]; 
+% Mảng 1: Vị trí (Index) các Zernike
+% pos_coeff = [1, 2, 3, 4, 5, 6, 7 ];
 % val_coeff = [];
 
-pos_coeff = 4:10;      % index các đa thức Zernike
-max_amp = 7;
-val_coeff = (rand(1, length(pos_coeff)) - 1) * 2 * max_amp;
+% pos_coeff = 4:16;      % index các đa thức Zernike
+% max_amp = 3;
+% val_coeff = (rand(1, length(pos_coeff)) - 0.5) * 2 * max_amp;
+
+pos_coeff = 4:10;
+max_amp = 3;
+
+val_coeff = (rand(1, length(pos_coeff))-0.5)*2*max_amp;
+[val_max, idx_max] = max(val_coeff);
+[val_min, idx_min] = min(val_coeff);
+
+val_coeff(idx_max) = -abs(max_amp);          % đỉnh lồi rõ ràng
+val_coeff(idx_min) = +abs(max_amp);         % hố lõm sâu
+
+
+
 
 % Kiểm tra an toàn: Hai mảng phải có cùng độ dài
 if length(pos_coeff) ~= length(val_coeff)
@@ -26,8 +39,8 @@ if length(pos_coeff) ~= length(val_coeff)
 end
 surface = zeros(size(rho));
 for k = 1:length(pos_coeff)
-    j = pos_coeff(k); 
-    c = val_coeff(k);  
+    j = pos_coeff(k);
+    c = val_coeff(k);
     if c==0
         continue;
     end
@@ -52,5 +65,5 @@ cmax = max(col_idx);
 
 % Cắt ra vùng vuông sạch, không NaN
 surface_square = surface_square(rmin:rmax, cmin:cmax);
-surface = surface_square;
+surface = 3*surface_square;
 end

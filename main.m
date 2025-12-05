@@ -6,7 +6,7 @@ addpath("D:\tuan\analysis\analysis_fringe");
 num_trials = 2; % Số lần chạy
 pos_coeff = cell(1, num_trials);
 val_coeff = cell(1, num_trials);
-noise_level = 0.3;
+noise_level = 0.1;
 RMSE = zeros(num_trials, 5);
 for i = 1:num_trials
 

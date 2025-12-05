@@ -1,8 +1,6 @@
 % vòng lặp để tính % sai số
 clc; clear; close all;
 addpath("D:\tuan\analysis\analysis_fringe");
-snr_values =  10;
-
 
 % --- Danh sách tên thuật toán ---
 phase_names = {'TIE (FFT-based)', ...
@@ -10,23 +8,28 @@ phase_names = {'TIE (FFT-based)', ...
                'Goldstein', 'Proposed'};
 nPhase = numel(phase_names);
 
-noise_level_range = 0.2:0.1:0.5; 
+noise_level_range = 0.05:0.01:0.15; 
 num_trials = length(noise_level_range);
+
 RMSE = zeros(num_trials, 5); 
+
+% load("my_create_zernike.mat");
+
+% [groundtruth, pos_coeff, val_coeff] = create_random_zernike_surface();
+load("random_surface.mat");
 
 for idxSNR = 1: num_trials
 fprintf("chay lan thu %d", idxSNR);
 M = 512; 
 N = 512; 
-load("my_create_zernike.mat");
-
-groundtruth = surface_square;
+close all;
 figure;
 surf(groundtruth, "EdgeColor","none");
 title("ground truth");
+
 sigma_signal = std(groundtruth(:), 'omitnan');
 noise_level = noise_level_range(idxSNR);
-% 3. Tạo nhiễu (Bỏ 'omitnan' trong randn)
+
 noise = (noise_level .* sigma_signal) .* randn(size(groundtruth));
 object_with_noise = groundtruth + noise;
 
@@ -53,7 +56,7 @@ hologram = adapthisteq(hologram);
 
 %%
 SENSITIVITY_COEF = 0.6;   % Hệ số nhạy adaptive threshold
-NEIGHBORHOOD_SIZE = 51;    % Kích thước vùng lân cận (phải là số lẻ)
+NEIGHBORHOOD_SIZE = 25;    % Kích thước vùng lân cận (phải là số lẻ)
 MIN_BRANCH_LENGTH = 8;    % Ngưỡng độ dài nhánh thừa cần xóa (thay cho distThresh cũ)
 GAUSS_SIGMA = 1;           % Độ làm mượt ảnh
 distThresh = 6;
@@ -229,29 +232,25 @@ offset = 10;
 finalUnwrappedPhase = finalUnwrappedPhase(offset+1:end-offset, offset+1:end-offset);
 
 %% 11. CÁC THUẬT TOÁN UNWRAPPING KHÁC
-phi_tie_dct      = Unwrap_TIE_DCT_Iter(wrapped_phase);      % TIE với DCT
+% phi_tie_dct      = Unwrap_TIE_DCT_Iter(wrapped_phase);      % TIE với DCT
+phi_tie_dct      = unwrap_TIE_FD_DCT(wrapped_phase);      % TIE với DCT
 phi_quality      = unwrap_quality(wrapped_phase);           % Quality-guided
 phi_wls          = phase_unwrap_2dweight(wrapped_phase);    % 2D Weighted LS
 phi_goldstein    = unwrap_goldstein(wrapped_phase);         % Goldstein branch-cut
 phi_proposed     = finalUnwrappedPhase;                     % Proposed / Hybrid
 
- [groundtruth_cut, wrapped_phase_cut, phi_goldstein_cut, phi_tie_cut, phi_qual_cut, phi_wls_cut, phi_proposed_cut] = ...
-        crop_multiple_to_smallest(groundtruth, wrapped_phase, phi_goldstein, phi_tie_dct, phi_quality, phi_wls, phi_proposed);
+[object_with_noise_cut, groundtruth_cut, wrapped_phase_cut, phi_goldstein_cut, phi_tie_cut, phi_qual_cut, phi_wls_cut, phi_proposed_cut] = ...
+    crop_multiple_to_smallest(object_with_noise, groundtruth, wrapped_phase, phi_goldstein, phi_tie_dct, phi_quality, phi_wls, phi_proposed);
 
 % close all;
 
-figure;
-surf(phi_proposed,"EdgeColor","none");
-title("anh proposed");
-
 % --- Các thuật toán cần so sánh theo thu tu chuan---
-phases = { phi_goldstein, ...
-    phi_quality, ...
-    phi_tie_dct, ...
-    phi_wls, ...
-    phi_proposed };
+phases = { phi_goldstein_cut, ...
+    phi_qual_cut, ...
+    phi_wls_cut, ...
+    phi_proposed_cut };
 phase_names = {'Goldstein', ...
-    'Quality', 'TIE- DCT','2D-WLS', ...
+    'Quality','2D-WLS', ...
     'Proposed'};
 nPhase = length(phases);
 
@@ -259,124 +258,97 @@ nPhase = length(phases);
 results_rmse_all = zeros(nPhase, 1);
 
 % Trừ trung bình (DC offset) cho các biến ĐÃ CẮT
-groundtruth_cut   = groundtruth_cut - mean(groundtruth_cut(:));
+object_with_noise_cut   = object_with_noise_cut - mean(object_with_noise_cut(:));
 phi_goldstein_cut = phi_goldstein_cut - mean(phi_goldstein_cut(:));
-phi_tie_cut       = phi_tie_cut - mean(phi_tie_cut(:));
 phi_qual_cut      = phi_qual_cut - mean(phi_qual_cut(:));
 phi_wls_cut       = phi_wls_cut - mean(phi_wls_cut(:));
 phi_proposed_cut  = phi_proposed_cut - mean(phi_proposed_cut(:));
 
-% --- 3.4 Tính sai số RMSE trên các biến ĐÃ CẮT ---
-RMSE(idxSNR,1) = compute_rmse(phi_goldstein_cut, groundtruth_cut);
-RMSE(idxSNR,2) = compute_rmse(phi_tie_cut,       groundtruth_cut);
-RMSE(idxSNR,3) = compute_rmse(phi_qual_cut,      groundtruth_cut);
-RMSE(idxSNR,4) = compute_rmse(phi_wls_cut,       groundtruth_cut);
-RMSE(idxSNR,5) = compute_rmse(phi_proposed_cut,  groundtruth_cut);
+RMSE(idxSNR,1) = compute_rmse(phi_goldstein_cut, object_with_noise_cut);
+RMSE(idxSNR,2) = compute_rmse(phi_qual_cut,      object_with_noise_cut);
+RMSE(idxSNR,3) = compute_rmse(phi_wls_cut,       object_with_noise_cut);
+RMSE(idxSNR,4) = compute_rmse(phi_proposed_cut,  object_with_noise_cut);
 
 
 end
 
-%% 2. Thiết lập thông số vẽ
-algo_names = {'Goldstein', 'TIE DCT', 'Quality', 'WLS', 'Proposed'};
-markers = {'o', '*', 'd', '^', 's'}; 
-line_styles = {'--', '--', '--', '--', '-'}; % Proposed nét liền
-colors = lines(5); 
+%% 1. Khai báo Hằng số và Cấu hình Vẽ
+% Tên các thuật toán để hiển thị trong chú giải
+ALGO_NAMES = {'Goldstein Branch-Cut', 'Quality-Guided', 'Weighted Least Squares', 'Proposed Method'};
+N_ALGO = length(ALGO_NAMES);
 
-%% 3. Vẽ biểu đồ so sánh
-figure('Name', 'RMSE vs Noise Level', 'Color', 'w', 'Position', [100, 100, 1000, 600]);
+% Cấu hình các đặc tính của đường vẽ (Marker, LineStyle, Color)
+MARKERS = {'s', '*', 'd', 'o'}; % 's': Square, '*': Star, 'd': Diamond, 'o': Circle
+LINE_STYLES = {'-', '-', '-', '-'}; % Nét liền cho tất cả
+BASE_COLORS = lines(N_ALGO); % Mảng màu cơ bản
 
-% --- BIỂU ĐỒ LINE PLOT ---
-hold on; grid on; box on;
+% Định nghĩa màu nổi bật cho thuật toán Proposed (thường là màu Cyan)
+PROPOSED_COLOR = [0, 0.75, 0.75]; % Màu xanh ngọc (Cyan)
 
-for k = 1:5
-    if k == 5
+%% 2. Vẽ Biểu đồ So sánh RMSE theo Mức Nhiễu
+% Tạo cửa sổ đồ thị
+figure('Name', 'RMSE vs Noise Level', 'Color', 'w', ...
+       'Position', [100, 100, 1000, 600]);
+
+% --- Line Plot ---
+hold on; 
+grid on; 
+box on; % Thêm khung bao quanh đồ thị
+
+% Vòng lặp vẽ dữ liệu cho từng thuật toán
+for k = 1:N_ALGO
+    % Xác định màu và cấu hình
+    if strcmp(ALGO_NAMES{k}, 'Proposed Method')
         % Cấu hình nổi bật cho Proposed
-        plot(noise_level_range, RMSE(:, k), ...
-            'LineStyle', line_styles{k}, ...
-            'Marker', markers{k}, ...
-            'Color', 'r', 'LineWidth', 1.5, ...
-            'MarkerFaceColor', 'r', 'MarkerSize', 6);
+        current_color = PROPOSED_COLOR;
+        % marker_face_color = PROPOSED_COLOR;
+        line_width = 1.5; % Nét dày hơn
     else
-        % Các thuật toán khác
-        plot(noise_level_range, RMSE(:, k), ...
-            'LineStyle', line_styles{k}, ...
-            'Marker', markers{k}, ...
-            'Color', colors(k,:), 'LineWidth', 1.5, ...
-            'MarkerSize', 6);
+        % Cấu hình tiêu chuẩn cho các thuật toán còn lại
+        current_color = BASE_COLORS(k,:);
+        marker_face_color = 'none'; % Không tô màu mặt marker
+        line_width = 1.5;
     end
+
+    % Lệnh vẽ
+    plot(noise_level_range, RMSE(:, k), ...
+         'DisplayName', ALGO_NAMES{k}, ...
+         'LineStyle', LINE_STYLES{k}, ...
+         'Marker', MARKERS{k}, ...
+         'Color', current_color, ...
+         'LineWidth', line_width, ...
+         'MarkerFaceColor', marker_face_color, ...
+         'MarkerSize', 6); % Marker lớn hơn để dễ nhìn
 end
 
-title('Performance under varying Noise Levels (Single Surface)');
-xlabel('Noise Level (Standard Deviation)');
-ylabel('RMSE (rad)');
-legend(algo_names, 'Location', 'northwest');
-set(gca, 'FontSize', 12, 'FontName', 'Times New Roman');
+% --- Định dạng Đồ thị ---
+% Tiêu đề trục
+xlabel('Noise Level', 'FontSize', 14, 'FontName', 'Times New Roman');
+ylabel('RMSE (rad)', 'FontSize', 14, 'FontName', 'Times New Roman');
+
+% Chú giải
+legend('Location', 'northwest', 'FontSize', 12, 'FontName', 'Times New Roman');
+
+% Giới hạn trục x và y (tùy chọn)
 xlim([min(noise_level_range), max(noise_level_range)]);
+% ylim([0, max(RMSE(:)) * 1.1]); % Thiết lập giới hạn trục Y theo dữ liệu
 
+% Định dạng trục đồ thị
+set(gca, 'FontSize', 12, 'FontName', 'Times New Roman', ...
+         'XMinorGrid', 'on', 'YMinorGrid', 'on');
 
+hold off;
+saveFolder = fullfile(pwd, 'ExportedFigures_simulation');
+if ~exist(saveFolder, 'dir')
+    mkdir(saveFolder);
+end
+timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+
+fileName = ['Fig_Comparison_nhieu_nhieux' timestamp];   % đổi ten anh
+fullPath = fullfile(saveFolder, fileName);
+export_fig([fullPath '.png'], '-png', '-r600');       % PNG 600 dpi
+export_fig([fullPath '.eps'], '-eps', '-opengl');   % EPS vector
 %% Hàm phụ trợ
-%% --- FUNCTION MZS ---
-function S = MZS_thinning(BW)
-    S = BW > 0;
-    prev = false(size(S));
-    while true
-        % Sub-iteration 1: even pixels
-        marker = MZS_iteration(S, 0);
-        S(marker) = 0;
-
-        % Sub-iteration 2: odd pixels
-        marker = MZS_iteration(S, 1);
-        S(marker) = 0;
-
-        if isequal(S, prev), break; end
-        prev = S;
-    end
-end
-
-function marker = MZS_iteration(S, parity)
-    % Pad để tránh lỗi biên
-    P = padarray(S, [1 1], 0, 'both');
-
-    % Lấy lân cận (theo thứ tự ZS)
-    P2 = P(1:end-2,2:end-1); % north
-    P3 = P(1:end-2,3:end);   % northeast
-    P4 = P(2:end-1,3:end);   % east
-    P5 = P(3:end,3:end);     % southeast
-    P6 = P(3:end,2:end-1);   % south
-    P7 = P(3:end,1:end-2);   % southwest
-    P8 = P(2:end-1,1:end-2); % west
-    P9 = P(1:end-2,1:end-2); % northwest
-    P1 = P(2:end-1,2:end-1); % center
-
-    % Tổng số hàng xóm (B)
-    B = P2+P3+P4+P5+P6+P7+P8+P9;
-
-    % C(p1) theo công thức trong paper
-    C = (~P2 & (P3|P4)) + (~P4 & (P5|P6)) + ...
-        (~P6 & (P7|P8)) + (~P8 & (P9|P2));
-
-    % Điều kiện chung
-    cond = (C==1);
-
-    if parity == 0   % subfield chẵn
-        cond = cond & (mod(bsxfun(@plus,(1:size(S,1))',(1:size(S,2))),2)==0);
-        cond = cond & (B>=2 & B<=7);
-        cond = cond & (~(P2 & P4 & P6));
-        cond = cond & (~(P4 & P6 & P8));
-    else             % subfield lẻ
-        cond = cond & (mod(bsxfun(@plus,(1:size(S,1))',(1:size(S,2))),2)==1);
-        cond = cond & (B>=1 & B<=7);
-        cond = cond & (~(P2 & P4 & P8));
-        cond = cond & (~(P2 & P6 & P8));
-
-        % Bổ sung điều kiện giữ pixel để bảo toàn 2x2 / diagonal
-        diagNeighbors = (P3|P5|P7|P9);
-        cond = cond & ~( (B==1) & diagNeighbors );
-    end
-
-    marker = P1 & cond;
-end
-
 %%
 function vectors = fitEndpointVectors(BW, endPoints, Nfit)
 % fitEndpointVectors - Tính vector hướng tại endpoint của skeleton
@@ -448,41 +420,6 @@ for k = 1:length(x_idx)
 end
 end
 
-function [BW_clean, junction] = removeJunctions(BW)
-% REMOVEJUNCTIONS - Phát hiện và loại bỏ junction pixels trong skeleton
-%
-% Syntax:
-%   [BW_clean, junction] = removeJunctions(BW)
-%
-% Input:
-%   BW - ảnh nhị phân skeleton
-%
-% Output:
-%   BW_clean - skeleton sau khi xoá junction
-%   junction - ảnh nhị phân, 1 tại vị trí junction pixel
-%
-% Đặc điểm:
-%   - Junction pixel: có >=3 hàng xóm trong 8 hướng
-%   - Bỏ qua các pixel sát biên (4 pixel)
-
-% --- 1. Đếm số hàng xóm ---
-kernel = ones(3,3); kernel(2,2) = 0;  % 8-neighborhood
-neighborCount = conv2(double(BW), kernel, 'same');
-
-% --- 2. Junction: skeleton pixel có >= 3 hàng xóm ---
-junction = (BW == 1) & (neighborCount >= 3);
-
-% --- 3. Không xét biên (4 pixel) ---
-junction(1:2,:)       = 0;
-junction(end-1:end,:) = 0;
-junction(:,1:2)       = 0;
-junction(:,end-1:end) = 0;
-
-% --- 4. Xóa junction ---
-BW_clean = BW;
-BW_clean(junction) = 0;
-end
-
 function [BW, linePix] = drawLine(BW, x1, y1, x2, y2)
 % Vẽ line nối từ (x1,y1) đến (x2,y2) bằng thuật toán Bresenham
 [h, w] = size(BW);
@@ -534,100 +471,6 @@ end
 end
 
 %% ----- Hàm phụ trợ -----
-
-%% connect khi xét qua toàn bộ endpoint và tìm điểm phù hợp nhất
-function [BW_new, linesConnected] = connectEndpoints_v3(BW, vectors, CC, minCompSize, maxDist, vecAlignThr,maxPerp)
-% BW           : skeleton binary
-% vectors      : [cx cy vx vy] từ hàm computeEndpointVectors
-% CC           : bwconncomp(BW,8)
-% minCompSize  : kích thước tối thiểu của vân
-% maxDist      : khoảng cách tối đa cho phép nối
-% vecAlignThr  : ngưỡng cos(angle) hướng (ví dụ 0.7 ~ >45°)
-
-BW_new = BW; % copy để cập nhật nối
-linesConnected = {}; % cell lưu danh sách các đoạn đã nối
-
-used = false(size(vectors,1),1); % đánh dấu endpoint đã được nối
-
-for i = 1:size(vectors,1)-1
-    if used(i), continue; end  % bỏ qua nếu endpoint i đã nối
-
-    cx1 = vectors(i,1); cy1 = vectors(i,2);
-    v1  = [vectors(i,3), vectors(i,4)];
-
-    % kiểm tra component của endpoint i
-    comp_id1 = findComponent(CC, [cy1,cx1]);
-    if comp_id1==0 || numel(CC.PixelIdxList{comp_id1}) < minCompSize
-        continue;
-    end
-
-    best_j   = 0;
-    bestCost = inf;
-
-    for j = i+1:size(vectors,1)
-        if used(j), continue; end
-
-        cx2 = vectors(j,1); cy2 = vectors(j,2);
-        v2  = [vectors(j,3), vectors(j,4)];
-
-        % kiểm tra component j
-        comp_id2 = findComponent(CC, [cy2,cx2]);
-        if comp_id2==0 || numel(CC.PixelIdxList{comp_id2}) < minCompSize
-            continue;
-        end
-
-        % --- khoảng cách Euclidean ---
-        d = hypot(cx1-cx2, cy1-cy2);
-        if d > maxDist, continue; end
-
-        % --- hướng vector ---
-        dir12 = [cx2-cx1, cy2-cy1];
-        dir12 = dir12 / (norm(dir12)+eps);
-
-        cond1 = dot(v1, dir12) > vecAlignThr;
-        cond2 = dot(v2, -dir12) > vecAlignThr;
-        if ~(cond1 && cond2), continue; end
-
-        % --- khoảng cách vuông góc ---
-        a = -v2(2);
-        b =  v2(1);
-        c =  v2(2)*cx2 - v2(1)*cy2;
-        d_perp = abs(a*cx1 + b*cy1 + c) / sqrt(a^2 + b^2);
-
-        if d_perp > maxPerp, continue; end
-
-        % --- tính "cost" để chọn ứng viên tốt nhất ---
-        % --- khoảng cách chuẩn hóa ---
-        d_norm = d / maxDist;  % [0,1]
-
-        % --- sai lệch góc ---
-        ang1 = acos(dot(v1, dir12));     % góc v1 với hướng nối
-        ang2 = acos(dot(v2, -dir12));    % góc v2 với hướng nối ngược
-        ang_err = (ang1 + ang2)/2;       % sai số góc trung bình (rad)
-
-        ang_norm = ang_err / (pi/2);     % chuẩn hóa [0,1], 0 tốt, 1 tệ
-
-        % --- khoảng cách vuông góc (cũng chuẩn hóa) ---
-        d_perp_norm = min(d_perp/10,1);  % giới hạn max =1
-        w1=0.2; w2=0.7; w3=0.1;
-        % --- cost tổng hợp ---
-        cost = w1*d_norm + w2*ang_norm + w3*d_perp_norm;
-        if cost < bestCost
-            bestCost = cost;
-            best_j   = j;
-        end
-    end
-
-    % Sau khi duyệt hết, nếu tìm thấy ứng viên tốt nhất thì nối
-    if best_j > 0
-        cx2 = vectors(best_j,1); cy2 = vectors(best_j,2);
-        [BW_new, linePixels] = drawLine(BW_new, cx1, cy1, cx2, cy2);
-        linesConnected{end+1} = linePixels; %#ok<AGROW>
-        used([i best_j]) = true;
-    end
-
-end
-end
 
 %% helper: estimate local direction via PCA on nearest pixels in same component
 function BW_out = extendLineNearBorder(BW, vectors, extendLen, margin)
@@ -711,31 +554,6 @@ end
 xx(end+1)=x2; yy(end+1)=y2;
 x=xx; y=yy;
 end
-function BW_clean = removeSmallComponents(BW, minSize)
-% Xoá các vùng liên thông có kích thước < minSize pixel
-%
-% Input:
-%   BW      - ảnh nhị phân (0/1)
-%   minSize - ngưỡng số pixel nhỏ nhất giữ lại
-%
-% Output:
-%   BW_clean - ảnh nhị phân sau khi lọc
-
-% Tìm vùng liên thông (8-neighbors)
-CC = bwconncomp(BW, 8);
-% Đếm số pixel trong từng vùng
-numPixels = cellfun(@numel, CC.PixelIdxList);
-
-% Giữ lại vùng đủ lớn
-BW_clean = BW;
-for i = 1:CC.NumObjects
-    if numPixels(i) < minSize
-        BW_clean(CC.PixelIdxList{i}) = 0; % xoá vùng nhỏ
-    end
-end
-%     BW_clean = bwmorph(BW_clean, 'spur', 1);  % loại bỏ các nhánh nhỏ lẻ
-
-end
 function comp_id = findComponent(CC, p)
 % p = [row, col]
 comp_id = 0;
@@ -748,15 +566,11 @@ for c = 1:CC.NumObjects
 end
 end
 %% ========================================================================
-
-% -------------------------------------------------------------------------
 function [unwrappedPhase, kMap] = unwrapUsingEstimate(estimatedPhase, wrappedPhase)
     % Giải Wrapped pha `wrappedPhase` dựa trên pha ước lượng `estimatedPhase`.
     kMap = round((estimatedPhase - wrappedPhase) / (2*pi));
     unwrappedPhase = wrappedPhase + 2*pi * kMap;
 end
-
-
 
 function [corrected_unwrapped_phase, num_iterations, convergence_history] = correct_sparse_artifacts_iterative(unwrapped_phase_input, varargin)
 % Hàm cải tiến: Xử lý các điểm nhiễu sparse với thuật toán lặp và ràng buộc biên
@@ -1200,8 +1014,6 @@ end
 
 end
 
-
-
 %% thêm 9-7-25
 function varargout = crop_multiple_to_smallest(varargin)
     % Giả định tất cả các biến là 2D ma trận
@@ -1228,43 +1040,6 @@ function varargout = crop_multiple_to_smallest(varargin)
 end
 
 %% them ngay 14/8/2025
-function im_unwrapped = goldstein_unwrap(phase_wrapped)
-    % GOLDSTEIN_UNWRAP - Phase unwrapping theo phương pháp Goldstein
-    % Input:
-    %   IM  - ảnh phức (complex image), IM = mag .* exp(1i * wrapped_phase)
-    % Output:
-    %   im_unwrapped - ảnh pha đã unwrap
-
-    % 1. Khởi tạo
-    % Biên độ (magnitude) = 1 
-    mag = ones(size(phase_wrapped));
-    IM = mag .* exp(1i * phase_wrapped);   
-
-    im_mag   = abs(IM);       % Magnitude
-    im_phase = angle(IM);     % Wrapped phase
-    im_mask  = ones(size(IM));
-
-    % 2. Tính residues
-    residue_charge = PhaseResidues_r1(im_phase, im_mask);
-
-    % 3. Tạo branch cuts
-    max_box_radius = 4;
-    branch_cuts = BranchCuts_r1(residue_charge, max_box_radius, im_mask);
-
-    % 4. Loại branch cuts khỏi mask
-    im_mask(branch_cuts) = 0;
-    im_mag1 = im_mag .* im_mask;
-
-    % 5. Chọn điểm tham chiếu (tự động chọn magnitude lớn nhất)
-    [r_dim, c_dim] = size(im_phase);
-    im_mag1([1 r_dim], :) = 0;
-    im_mag1(:, [1 c_dim]) = 0;
-    [~, idx_max] = max(im_mag1(:));
-    [rowref, colref] = ind2sub(size(im_mag1), idx_max);
-
-    % 6. Unwrap
-    im_unwrapped = FloodFill_r1(im_phase, im_mag, branch_cuts, im_mask, colref, rowref);
-end
 
 function [recons_surface, figure_handle] = reconSurface_linearPushed(BW, fringe_labels, lambda, tilt_option, show_figure)
 % RECONSURFACE_LINEARPUSHED Tái tạo bề mặt 3D từ ảnh vân giao thoa
