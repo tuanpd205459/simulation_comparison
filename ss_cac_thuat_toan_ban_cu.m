@@ -8,7 +8,7 @@ phase_names = {'TIE (FFT-based)', ...
                'Goldstein', 'Proposed'};
 nPhase = numel(phase_names);
 
-noise_level_range = 0.05:0.01:0.15; 
+noise_level_range = 0.05:0.01:0.17; 
 num_trials = length(noise_level_range);
 
 RMSE = zeros(num_trials, 5); 
@@ -244,6 +244,18 @@ phi_proposed     = finalUnwrappedPhase;                     % Proposed / Hybrid
 
 % close all;
 
+% Hàm nội bộ để đẩy min về 0
+shift_to_zero = @(x) x - min(x(:));
+
+% Áp dụng cho các biến (trừ Quality map vì thường nó đã là 0-1)
+object_with_noise_cut       = shift_to_zero(object_with_noise_cut);
+% wrapped_phase_cut  = shift_to_zero(wrapped_phase_cut);  
+phi_goldstein_cut= shift_to_zero(phi_goldstein_cut);  
+phi_wls_cut      = shift_to_zero(phi_wls_cut);          
+phi_proposed_cut = shift_to_zero(phi_proposed_cut);
+phi_qual_cut = shift_to_zero(phi_qual_cut);
+
+
 % --- Các thuật toán cần so sánh theo thu tu chuan---
 phases = { phi_goldstein_cut, ...
     phi_qual_cut, ...
@@ -292,7 +304,7 @@ figure('Name', 'RMSE vs Noise Level', 'Color', 'w', ...
 
 % --- Line Plot ---
 hold on; 
-grid on; 
+% grid on; 
 box on; % Thêm khung bao quanh đồ thị
 
 % Vòng lặp vẽ dữ liệu cho từng thuật toán
@@ -311,7 +323,8 @@ for k = 1:N_ALGO
     end
 
     % Lệnh vẽ
-    plot(noise_level_range, RMSE(:, k), ...
+    x_noise_axis = noise_level_range*100;
+    plot(x_noise_axis, RMSE(:, k), ...
          'DisplayName', ALGO_NAMES{k}, ...
          'LineStyle', LINE_STYLES{k}, ...
          'Marker', MARKERS{k}, ...
@@ -323,22 +336,22 @@ end
 
 % --- Định dạng Đồ thị ---
 % Tiêu đề trục
-xlabel('Noise Level', 'FontSize', 14, 'FontName', 'Times New Roman');
-ylabel('RMSE (rad)', 'FontSize', 14, 'FontName', 'Times New Roman');
+xlabel('Noise Level (%)', 'FontSize', 12, 'FontName', 'Times New Roman');
+ylabel('RMSE (rad)', 'FontSize', 12, 'FontName', 'Times New Roman');
 
 % Chú giải
 legend('Location', 'northwest', 'FontSize', 12, 'FontName', 'Times New Roman');
 
 % Giới hạn trục x và y (tùy chọn)
-xlim([min(noise_level_range), max(noise_level_range)]);
-% ylim([0, max(RMSE(:)) * 1.1]); % Thiết lập giới hạn trục Y theo dữ liệu
+xlim([min(x_noise_axis)*1.05, max(x_noise_axis)*1.05]);
+ylim([min(RMSE(:))- 0.025, max(RMSE(:)) * 1.05]); % Thiết lập giới hạn trục Y theo dữ liệu
 
 % Định dạng trục đồ thị
 set(gca, 'FontSize', 12, 'FontName', 'Times New Roman', ...
-         'XMinorGrid', 'on', 'YMinorGrid', 'on');
-
+         'XMinorGrid', 'off', 'YMinorGrid', 'off');
 hold off;
-saveFolder = fullfile(pwd, 'ExportedFigures_simulation');
+
+saveFolder = fullfile(pwd, 'so_sanh_cac_tt_nhieu_muc_nhieu');
 if ~exist(saveFolder, 'dir')
     mkdir(saveFolder);
 end
@@ -348,6 +361,10 @@ fileName = ['Fig_Comparison_nhieu_nhieux' timestamp];   % đổi ten anh
 fullPath = fullfile(saveFolder, fileName);
 export_fig([fullPath '.png'], '-png', '-r600');       % PNG 600 dpi
 export_fig([fullPath '.eps'], '-eps', '-opengl');   % EPS vector
+
+
+
+
 %% Hàm phụ trợ
 %%
 function vectors = fitEndpointVectors(BW, endPoints, Nfit)

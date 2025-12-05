@@ -66,4 +66,5 @@ cmax = max(col_idx);
 % Cắt ra vùng vuông sạch, không NaN
 surface_square = surface_square(rmin:rmax, cmin:cmax);
 surface = 3*surface_square;
+
 end

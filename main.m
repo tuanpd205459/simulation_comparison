@@ -3,128 +3,120 @@ clc, clear, close all;
 %% 1. Cài đặt tham số
 addpath("D:\tuan\analysis\analysis_fringe");
 %% --- 1. CẤU HÌNH VÀ KHỞI TẠO ---
-num_trials = 2; % Số lần chạy
-pos_coeff = cell(1, num_trials);
-val_coeff = cell(1, num_trials);
-noise_level = 0.1;
-RMSE = zeros(num_trials, 5);
+%% 1. Thiết lập chung và chạy vòng lặp
+num_trials = 10; % Số lần chạy
+RMSE = zeros(num_trials, 4); % 4 thuật toán: Goldstein, Quality, WLS, Proposed
+noise_level = 0.08;
+% Cấu hình tên và màu sắc chuẩn bị cho vẽ
+algo_names = {'Goldstein', 'Quality', 'WLS', 'Proposed'};
+
+% --- Cấu hình Style cho Publication ---
+% Màu sắc: [R G B]
+c_gold   = [0 0 1];       % Blue
+c_qual   = [0 0.5 0];     % Dark Green
+c_wls    = [0.2 0.2 0.2]; % Dark Gray (Black-ish)
+c_prop   = [0 1 1];       % CYAN (Theo yêu cầu)
+
+colors = [c_gold; c_qual; c_wls; c_prop];
+
+% Markers và Line Styles
+markers     = {'^', 's', 'd', 'o'}; 
+line_styles = {'--', '--', '--', '-'}; % Proposed nét liền, còn lại nét đứt
+line_widths = [1.2, 1.2, 1.2, 2.0];    % Proposed dày hơn
+
 for i = 1:num_trials
-
-    [groundtruth, pos_coeff{1,i}, val_coeff{1,i}] = create_random_zernike_surface();
-    [hologram, wrapped_phase, carrier] = create_hologram(groundtruth, noise_level);
-    % figure;
-    % surf(groundtruth, "EdgeColor","none");
-    % title("groundtruth");
-    % figure;
-    % imshow(hologram,[]);
-    % title("anh hologram");
-
+    % --- 1. Tạo dữ liệu mô phỏng ---
+    [groundtruth, ~, ~] = create_random_zernike_surface();
+    [hologram, wrapped_phase, carrier, object_with_noise] = create_hologram(groundtruth, noise_level);
     estimate_phase = create_estimate_phase(hologram, groundtruth, wrapped_phase, carrier);
 
+    % --- 2. Chạy thuật toán Unwrapping ---
+    phi_goldstein = unwrap_goldstein(wrapped_phase);
+    phi_quality   = unwrap_quality(wrapped_phase);
+    phi_wls       = phase_unwrap_2dweight(wrapped_phase);
+    phi_proposed  = estimate_phase; 
 
-    % 3.3 Chạy unwrapping
-    % --- Unwrap phase bằng các thuật toán ---
-    phi_tie_dct      = Unwrap_TIE_DCT_Iter(wrapped_phase);     % TIE với DCT
-    phi_quality      = unwrap_quality(wrapped_phase);          % Quality-guided
-    phi_wls          = phase_unwrap_2dweight(wrapped_phase);      % 2D Weighted LS
-    phi_goldstein    = unwrap_goldstein(wrapped_phase);     % goldstein branch-cut
-    phi_proposed     = estimate_phase;                                     % Proposed / Hybrid
+    % (Bỏ qua phi_ls vì không thấy trong danh sách algo_names)
 
-    value_x = size(wrapped_phase,2);
-    value_y = size(wrapped_phase,1);
-    phi_ls = unwrap_phase_LS(wrapped_phase, value_x, value_y);
-  figure;
-    surf(phi_ls, "EdgeColor","none");
-    title("phi ls");
-    % phi_wls = phi_ls;
+    % --- 3. Crop về cùng kích thước ---
+    [groundtruth, object_with_noise, wrapped_phase, phi_goldstein, phi_quality, phi_wls, phi_proposed] = ...
+        crop_multiple_to_smallest(groundtruth, object_with_noise, wrapped_phase, phi_goldstein, phi_quality, phi_wls, phi_proposed);
 
-    % --- Crop tất cả về cùng kích thước nhỏ nhất ---
-    [groundtruth, wrapped_phase, phi_goldstein, phi_tie_dct, phi_quality, phi_wls, phi_proposed] = ...
-        crop_multiple_to_smallest(groundtruth, wrapped_phase, phi_goldstein, phi_tie_dct, phi_quality, phi_wls, phi_proposed);
+    % --- 4. Xử lý Offset (Quan trọng: Trừ Mean để tính RMSE chính xác) ---
+    % Lưu ý: Khi tính RMSE cho bài báo, ta thường so sánh dao động quanh giá trị trung bình
+    % hoặc phải shift sao cho phase khớp nhau nhất. Ở đây dùng trừ mean.
+    gt_zero   = object_with_noise - mean(object_with_noise(:));
+    p_gold_z  = phi_goldstein - mean(phi_goldstein(:));
+    p_qual_z  = phi_quality   - mean(phi_quality(:));
+    p_wls_z   = phi_wls       - mean(phi_wls(:));
+    p_prop_z  = phi_proposed  - mean(phi_proposed(:));
 
-    phi_tie_dct = phi_tie_dct -min(phi_tie_dct(:));
-    phi_quality = phi_quality -min(phi_quality(:));
-    phi_wls = phi_wls -min(phi_wls(:));
-    phi_goldstein = phi_goldstein -min(phi_goldstein(:));
-    phi_proposed = phi_proposed -min(phi_proposed(:));
-    groundtruth = groundtruth -min(groundtruth(:));
-
-    figure;
-    surf(phi_proposed, "EdgeColor","none");
-    title("phi proposed");
-
-    figure;
-    surf(phi_goldstein, "EdgeColor","none");
-    title("phi goldstein");
-
-    % 3.4 Tính sai số
-    RMSE(i,1) = compute_rmse(phi_goldstein, groundtruth);
-    RMSE(i,2) = compute_rmse(phi_tie_dct, groundtruth);
-    RMSE(i,3) = compute_rmse(phi_quality,   groundtruth);
-    RMSE(i,4) = compute_rmse(phi_wls,  groundtruth);
-    RMSE(i,5) = compute_rmse(phi_proposed,   groundtruth);
-
+    % --- 5. Tính RMSE và lưu vào ma trận (Cột 1->4) ---
+    RMSE(i, 1) = compute_rmse(p_gold_z, gt_zero); % Goldstein
+    RMSE(i, 2) = compute_rmse(p_qual_z, gt_zero); % Quality
+    RMSE(i, 3) = compute_rmse(p_wls_z,  gt_zero); % WLS
+    RMSE(i, 4) = compute_rmse(p_prop_z, gt_zero); % Proposed
 end
-% close all;
 
-%% 2. Thiết lập thông số vẽ
-algo_names = {'Goldstein', 'TIE DCT', 'Quality', 'WLS', 'Proposed'};
+%% 2. Vẽ hình (Visualization)
+% Tạo một Figure lớn chứa cả 2 biểu đồ (hoặc tách ra nếu muốn)
+figure('Name', 'Scientific RMSE Comparison', 'Color', 'w', 'Position', [50, 50, 1000, 500]);
 
-% Ký hiệu marker cho Line plot để dễ phân biệt (đen trắng vẫn nhìn được)
-markers = {'o', '*', 'd', '^', 's'}; 
-line_styles = {'-', '-', '-', '-', '-'}; % Các đường khác nét đứt, Proposed nét liền
-colors = lines(5); % Lấy bảng màu mặc định
-
-%% 3. Vẽ biểu đồ
-figure('Name', 'So sanh RMSE', 'Color', 'w', 'Position', [100, 100, 1200, 500]);
-
-% --- BIỂU ĐỒ 1: LINE PLOT (Bên trái) ---
+% --- BIỂU ĐỒ 1: LINE PLOT (Theo dõi qua các lần chạy) ---
+subplot(1, 2, 1);
 hold on; grid on; box on;
 
-for i = 1:5
-    if i == 5
-        % Cấu hình riêng cho thuật toán Proposed (Cột 5) để nó nổi bật nhất
-        plot(1:num_trials, RMSE(:, i), ...
-            'LineStyle', line_styles{i}, ...
-            'Marker', markers{i}, ...
-            'Color', 'r', ...          % Màu đỏ
-            'LineWidth', 2, ...        % Nét đậm hơn
-            'MarkerFaceColor', 'b', ...
-            'MarkerSize', 6);
+for k = 1:4
+    if k == 4 % Cấu hình riêng cho Proposed (Cyan)
+        plot(1:num_trials, RMSE(:, k), ...
+            'LineStyle', line_styles{k}, ...
+            'Marker', markers{k}, ...
+            'Color', colors(k, :), ...          % Màu Cyan
+            'LineWidth', line_widths(k), ...
+            'MarkerFaceColor', 'w', ...         % Mặt trong marker màu trắng cho nổi
+            'MarkerEdgeColor', [0 0.5 0.5], ... % Viền marker tối hơn xíu để rõ trên nền Cyan
+            'MarkerSize', 7);
     else
-        % Các thuật toán khác
-        plot(1:num_trials, RMSE(:, i), ...
-            'LineStyle', line_styles{i}, ...
-            'Marker', markers{i}, ...
-            'Color', colors(i,:), ...
-            'LineWidth', 1.5, ...
+        plot(1:num_trials, RMSE(:, k), ...
+            'LineStyle', line_styles{k}, ...
+            'Marker', markers{k}, ...
+            'Color', colors(k, :), ...
+            'LineWidth', line_widths(k), ...
             'MarkerSize', 6);
     end
 end
 
-title('Comparison of RMSE across 15 Surfaces');
-xlabel('Surface Index');
+% Trang trí biểu đồ 1
+title('RMSE Performance per Trial');
+xlabel('Surface Index (Trial)');
 ylabel('RMSE (rad)');
-xlim([1 num_trials]);
-xticks(1:num_trials); % Hiển thị đủ số 1 đến 15
-legend(algo_names, 'Location', 'best');
-set(gca, 'FontSize', 12, 'FontName', 'Times New Roman'); % Font chữ báo cáo
+xlim([0.5, num_trials + 0.5]);
+xticks(1:max(1, round(num_trials/5)):num_trials); % Hiển thị tick trục X thông minh
+legend(algo_names, 'Location', 'best', 'FontSize', 10);
+set(gca, 'FontName', 'Times New Roman', 'FontSize', 12);
 
-% --- BIỂU ĐỒ 2: BOX PLOT 
-figure;
-% Vẽ Boxplot
-boxplot(RMSE, 'Labels', algo_names, 'Symbol', 'r+'); % Symbol 'r+' là dấu cộng đỏ cho outlier
 
+% --- BIỂU ĐỒ 2: BOX PLOT (Phân bố thống kê) ---
+subplot(1, 2, 2);
+box_handle = boxplot(RMSE, 'Labels', algo_names, 'Symbol', 'rx'); % 'rx' là outlier dấu x đỏ
+
+% Trang trí Boxplot
 title('Statistical Distribution of RMSE');
 ylabel('RMSE (rad)');
-grid on;
-set(gca, 'FontSize', 12, 'FontName', 'Times New Roman');
+grid on; box on;
+set(gca, 'FontName', 'Times New Roman', 'FontSize', 12);
 
-% Tinh chỉnh màu sắc cho Box plot (Tùy chọn cho đẹp)
-h = findobj(gca,'Tag','Box');
-for j=1:length(h)
-    patch(get(h(j),'XData'),get(h(j),'YData'), colors(6-j,:), 'FaceAlpha',.5);
+% --- Tô màu Boxplot cho đồng bộ với Lineplot ---
+h = findobj(gca, 'Tag', 'Box');
+% Boxplot vẽ ngược từ dưới lên, nên ta duyệt ngược
+for j = 1:length(h)
+    algo_idx = length(h) - j + 1; % Map ngược lại index thuật toán
+    patch(get(h(j), 'XData'), get(h(j), 'YData'), colors(algo_idx, :), ...
+          'FaceAlpha', 0.3, 'EdgeColor', colors(algo_idx, :), 'LineWidth', 1.2);
 end
+
+% Thêm tiêu đề chung (nếu dùng MATLAB bản mới)
+% sgtitle('Performance Comparison of Phase Unwrapping Algorithms', 'FontName', 'Times New Roman', 'FontWeight', 'bold');
 
 %% 4. Lưu ảnh (Tùy chọn)
 % exportgraphics(gcf, 'RMSE_Comparison.png', 'Resolution', 300);

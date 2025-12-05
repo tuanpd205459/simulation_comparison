@@ -1,0 +1,7 @@
+Index: 4, Coeff: 0.92
+Index: 5, Coeff: 4.32
+Index: 6, Coeff: -2.23
+Index: 7, Coeff: 3.31
+Index: 8, Coeff: 3.48
+Index: 9, Coeff: 0.64
+Index: 10, Coeff: -3.15

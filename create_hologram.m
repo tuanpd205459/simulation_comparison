@@ -1,4 +1,4 @@
-function [hologram, wrapped_phase, carrier] = create_hologram(surface, noise_level)
+function [hologram, wrapped_phase, carrier, object_phase] = create_hologram(surface, noise_level)
 N = size(surface,1);
 M = size(surface,2);
 

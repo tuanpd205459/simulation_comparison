@@ -1,0 +1,1 @@
+Chương trình chạy mô phỏng 1 bề mặt nhiều mức nhiễu- ss_cac_thuat_toan_ban_cu.m
