@@ -295,7 +295,7 @@ LINE_STYLES = {'-', '-', '-', '-'}; % Nét liền cho tất cả
 BASE_COLORS = lines(N_ALGO); % Mảng màu cơ bản
 
 % Định nghĩa màu nổi bật cho thuật toán Proposed (thường là màu Cyan)
-PROPOSED_COLOR = [0, 0.75, 0.75]; % Màu xanh ngọc (Cyan)
+PROPOSED_COLOR = [0.00 0.37 0.70 ]; % Màu xanh ngọc (Cyan)
 
 %% 2. Vẽ Biểu đồ So sánh RMSE theo Mức Nhiễu
 % Tạo cửa sổ đồ thị
@@ -305,7 +305,7 @@ figure('Name', 'RMSE vs Noise Level', 'Color', 'w', ...
 % --- Line Plot ---
 hold on; 
 % grid on; 
-box on; % Thêm khung bao quanh đồ thị
+% box on; % Thêm khung bao quanh đồ thị
 
 % Vòng lặp vẽ dữ liệu cho từng thuật toán
 for k = 1:N_ALGO
@@ -351,16 +351,16 @@ set(gca, 'FontSize', 12, 'FontName', 'Times New Roman', ...
          'XMinorGrid', 'off', 'YMinorGrid', 'off');
 hold off;
 
-saveFolder = fullfile(pwd, 'so_sanh_cac_tt_nhieu_muc_nhieu');
-if ~exist(saveFolder, 'dir')
-    mkdir(saveFolder);
-end
-timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
-
-fileName = ['Fig_Comparison_nhieu_nhieux' timestamp];   % đổi ten anh
-fullPath = fullfile(saveFolder, fileName);
-export_fig([fullPath '.png'], '-png', '-r600');       % PNG 600 dpi
-export_fig([fullPath '.eps'], '-eps', '-opengl');   % EPS vector
+% saveFolder = fullfile(pwd, 'so_sanh_cac_tt_nhieu_muc_nhieu');
+% if ~exist(saveFolder, 'dir')
+%     mkdir(saveFolder);
+% end
+% timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+% 
+% fileName = ['Fig_Comparison_nhieu_nhieux' timestamp];   % đổi ten anh
+% fullPath = fullfile(saveFolder, fileName);
+% export_fig([fullPath '.png'], '-png', '-r600');       % PNG 600 dpi
+% export_fig([fullPath '.eps'], '-eps', '-opengl');   % EPS vector
 
 
 

@@ -3,10 +3,10 @@ clc, clear, close all;
 %% 1. Cài đặt tham số
 addpath("D:\tuan\analysis\analysis_fringe");
 %% --- 1. CẤU HÌNH VÀ KHỞI TẠO ---
-%% 1. Thiết lập chung và chạy vòng lặp
-num_trials = 10; % Số lần chạy
+% 1. Thiết lập chung và chạy vòng lặp
+num_trials = 5; % Số lần chạy
 RMSE = zeros(num_trials, 4); % 4 thuật toán: Goldstein, Quality, WLS, Proposed
-noise_level = 0.08;
+noise_level = 0.1;
 % Cấu hình tên và màu sắc chuẩn bị cho vẽ
 algo_names = {'Goldstein', 'Quality', 'WLS', 'Proposed'};
 

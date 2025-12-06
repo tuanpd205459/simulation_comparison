@@ -114,7 +114,7 @@ if ~isempty(vectors_data)
 else
     BW_connected = BW;
 end
-MIN_BRANCH_LENGTH = 40;
+MIN_BRANCH_LENGTH = 20;
 BW_connected = bwskel(BW_connected, 'MinBranchLength', MIN_BRANCH_LENGTH);
 
 %%
